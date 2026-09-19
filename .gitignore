@@ -13,3 +13,6 @@ override.tf.json
 *_override.tf.json
 
 .terraform.tfstate.lock.info
+
+# Terraform plan files
+*.tfplan

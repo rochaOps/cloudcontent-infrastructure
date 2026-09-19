@@ -27,6 +27,5 @@ locals {
     logs                 = "logs"
     ssm                  = "ssm"
     ssmmessages          = "ssmmessages"
-    ec2messages          = "ec2messages"
   }
 }

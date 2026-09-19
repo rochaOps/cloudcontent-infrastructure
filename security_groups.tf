@@ -87,6 +87,17 @@ resource "aws_vpc_security_group_egress_rule" "app_to_vpc_endpoints" {
   description = "Allow application workloads to access interface VPC endpoints"
 }
 
+resource "aws_vpc_security_group_egress_rule" "app_to_s3_gateway" {
+  security_group_id = aws_security_group.app.id
+
+  prefix_list_id = aws_vpc_endpoint.s3.prefix_list_id
+
+  ip_protocol = "tcp"
+  from_port   = 443
+  to_port     = 443
+
+  description = "Allow application workloads to access S3 through the Gateway VPC Endpoint"
+}
 
 # -----------------------------------------------------------------------------
 # RDS

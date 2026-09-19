@@ -7,9 +7,10 @@ terraform {
       version = "~> 6.0"
     }
   }
+
   backend "s3" {
     bucket       = "tf-state-915227020774"
-    key          = "cloudcontent/foundation/terraform.tfstate"
+    key          = "cloudcontent/bootstrap/terraform.tfstate"
     region       = "ap-northeast-1"
     use_lockfile = true
     encrypt      = true
