@@ -22,7 +22,8 @@ data "aws_iam_policy_document" "terraform_foundation" {
     effect = "Allow"
 
     actions = [
-      "ec2:Describe*"
+      "ec2:Describe*",
+      "ec2:GetManagedPrefixListEntries"
     ]
 
     resources = ["*"]
@@ -93,6 +94,7 @@ data "aws_iam_policy_document" "terraform_foundation" {
       "s3:PutBucket*",
       "s3:DeleteBucket*",
       "s3:GetEncryptionConfiguration",
+      "s3:GetAccelerateConfiguration",
       "s3:PutEncryptionConfiguration",
       "s3:DeleteBucketEncryption",
       "s3:GetObject",

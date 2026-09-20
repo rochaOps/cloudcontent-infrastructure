@@ -76,6 +76,7 @@ data "aws_iam_policy_document" "terraform_plan_foundation" {
     actions = [
       "s3:GetBucket*",
       "s3:GetEncryptionConfiguration",
+      "s3:GetAccelerateConfiguration",
       "s3:ListBucket",
       "s3:ListBucketVersions"
     ]
