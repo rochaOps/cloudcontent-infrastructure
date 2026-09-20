@@ -22,7 +22,8 @@ data "aws_iam_policy_document" "terraform_foundation" {
     effect = "Allow"
 
     actions = [
-      "ec2:Describe*"
+      "ec2:Describe*",
+      "ec2:GetManagedPrefixListEntries"
     ]
 
     resources = ["*"]
@@ -86,6 +87,8 @@ data "aws_iam_policy_document" "terraform_foundation" {
     sid    = "ManageCloudContentBuckets"
     effect = "Allow"
 
+    # File: /repo/CloudContent/bootstrap/github_foundation_policy.tf
+
     actions = [
       "s3:CreateBucket",
       "s3:DeleteBucket",
@@ -93,6 +96,9 @@ data "aws_iam_policy_document" "terraform_foundation" {
       "s3:PutBucket*",
       "s3:DeleteBucket*",
       "s3:GetEncryptionConfiguration",
+      "s3:GetAccelerateConfiguration",
+      "s3:GetLifecycleConfiguration",
+      "s3:GetReplicationConfiguration",
       "s3:PutEncryptionConfiguration",
       "s3:DeleteBucketEncryption",
       "s3:GetObject",
