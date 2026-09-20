@@ -95,6 +95,7 @@ data "aws_iam_policy_document" "terraform_foundation" {
       "s3:DeleteBucket*",
       "s3:GetEncryptionConfiguration",
       "s3:GetAccelerateConfiguration",
+      "s3:GetLifecycleConfiguration",
       "s3:PutEncryptionConfiguration",
       "s3:DeleteBucketEncryption",
       "s3:GetObject",
