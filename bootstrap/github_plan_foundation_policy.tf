@@ -4,7 +4,8 @@ data "aws_iam_policy_document" "terraform_plan_foundation" {
     effect = "Allow"
 
     actions = [
-      "ec2:Describe*"
+      "ec2:Describe*",
+      "ec2:GetManagedPrefixListEntries"
     ]
 
     resources = ["*"]
