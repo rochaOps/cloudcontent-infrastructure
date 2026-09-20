@@ -17,3 +17,8 @@ output "terraform_foundation_policy_arn" {
   description = "IAM policy used to manage the CloudContent AWS foundation"
   value       = aws_iam_policy.terraform_foundation.arn
 }
+
+output "github_plan_role_arn" {
+  description = "IAM role assumed by GitHub Actions for Terraform pull request plans"
+  value       = aws_iam_role.github_plan.arn
+}
