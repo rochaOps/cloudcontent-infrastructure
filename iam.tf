@@ -120,3 +120,53 @@ resource "aws_iam_role_policy_attachment" "app_s3_content_permission" {
   role       = aws_iam_role.app.name
   policy_arn = aws_iam_policy.app_s3_content_permission.arn
 }
+
+
+# -----------------------------------------------------------------------------
+# EC2 Systems Manager
+# -----------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "ec2_assume_role" {
+  statement {
+    sid    = "AllowEc2AssumeRole"
+    effect = "Allow"
+
+    actions = [
+      "sts:AssumeRole"
+    ]
+
+    principals {
+      type = "Service"
+
+      identifiers = [
+        "ec2.amazonaws.com"
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role" "ec2" {
+  name = "cloudcontent-ec2"
+
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+
+  tags = merge(local.common_tags, {
+    Name = "cloudcontent-ec2"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_ssm" {
+  role = aws_iam_role.ec2.name
+
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "ec2" {
+  name = "cloudcontent-ec2"
+
+  role = aws_iam_role.ec2.name
+
+  tags = merge(local.common_tags, {
+    Name = "cloudcontent-ec2"
+  })
+}
