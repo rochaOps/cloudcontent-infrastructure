@@ -1,6 +1,5 @@
 locals {
-  free_content_bucket_arn = "arn:${data.aws_partition.current.partition}:s3:::cloudcontent-free-content-${data.aws_caller_identity.current.account_id}"
-
+  free_content_bucket_arn    = "arn:${data.aws_partition.current.partition}:s3:::cloudcontent-free-content-${data.aws_caller_identity.current.account_id}"
   premium_content_bucket_arn = "arn:${data.aws_partition.current.partition}:s3:::cloudcontent-premium-content-${data.aws_caller_identity.current.account_id}"
 
   app_role_arn = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/cloudcontent-app"
@@ -9,7 +8,14 @@ locals {
     "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/cloudcontent-app-rds-connect",
     "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/cloudcontent-app-s3-content"
   ]
+
+  ec2_role_arn = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/cloudcontent-ec2"
+
+  ec2_instance_profile_arn = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:instance-profile/cloudcontent-ec2"
+
+  ssm_managed_instance_core_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
+
 
 data "aws_iam_policy_document" "terraform_foundation" {
 
@@ -80,6 +86,30 @@ data "aws_iam_policy_document" "terraform_foundation" {
 
 
   # ---------------------------------------------------------------------------
+  # EC2 - CloudContent application instance
+  # ---------------------------------------------------------------------------
+
+  statement {
+    sid    = "ManageCloudContentEc2Instance"
+    effect = "Allow"
+
+    actions = [
+      "ec2:RunInstances",
+      "ec2:TerminateInstances",
+      "ec2:StartInstances",
+      "ec2:StopInstances",
+      "ec2:RebootInstances",
+      "ec2:ModifyInstanceAttribute",
+      "ec2:AssociateIamInstanceProfile",
+      "ec2:DisassociateIamInstanceProfile",
+      "ec2:ReplaceIamInstanceProfileAssociation"
+    ]
+
+    resources = ["*"]
+  }
+
+
+  # ---------------------------------------------------------------------------
   # S3 content buckets
   # ---------------------------------------------------------------------------
 
@@ -87,24 +117,27 @@ data "aws_iam_policy_document" "terraform_foundation" {
     sid    = "ManageCloudContentBuckets"
     effect = "Allow"
 
-    # File: /repo/CloudContent/bootstrap/github_foundation_policy.tf
-
     actions = [
       "s3:CreateBucket",
       "s3:DeleteBucket",
+
       "s3:GetBucket*",
       "s3:PutBucket*",
       "s3:DeleteBucket*",
+
       "s3:GetEncryptionConfiguration",
       "s3:GetAccelerateConfiguration",
       "s3:GetLifecycleConfiguration",
       "s3:GetReplicationConfiguration",
+
       "s3:PutEncryptionConfiguration",
       "s3:DeleteBucketEncryption",
+
       "s3:GetObject",
       "s3:PutObject",
       "s3:DeleteObject",
       "s3:DeleteObjectVersion",
+
       "s3:ListBucket",
       "s3:ListBucketVersions"
     ]
@@ -112,7 +145,6 @@ data "aws_iam_policy_document" "terraform_foundation" {
     resources = [
       local.free_content_bucket_arn,
       "${local.free_content_bucket_arn}/*",
-
       local.premium_content_bucket_arn,
       "${local.premium_content_bucket_arn}/*"
     ]
@@ -192,11 +224,9 @@ data "aws_iam_policy_document" "terraform_foundation" {
       "rds:CreateDBInstance",
       "rds:ModifyDBInstance",
       "rds:DeleteDBInstance",
-
       "rds:CreateDBSubnetGroup",
       "rds:ModifyDBSubnetGroup",
       "rds:DeleteDBSubnetGroup",
-
       "rds:AddTagsToResource",
       "rds:RemoveTagsFromResource"
     ]
@@ -273,7 +303,7 @@ data "aws_iam_policy_document" "terraform_foundation" {
 
 
   # ---------------------------------------------------------------------------
-  # IAM - policies owned by the CloudContent application
+  # IAM - policies owned by CloudContent application
   # ---------------------------------------------------------------------------
 
   statement {
@@ -309,7 +339,7 @@ data "aws_iam_policy_document" "terraform_foundation" {
 
 
   # ---------------------------------------------------------------------------
-  # IAM - attach only CloudContent application policies to the app role
+  # IAM - attach only CloudContent application policies to app role
   # ---------------------------------------------------------------------------
 
   statement {
@@ -330,6 +360,125 @@ data "aws_iam_policy_document" "terraform_foundation" {
       variable = "iam:PolicyARN"
 
       values = local.app_policy_arns
+    }
+  }
+
+
+  # ---------------------------------------------------------------------------
+  # IAM - CloudContent EC2 role
+  # ---------------------------------------------------------------------------
+
+  statement {
+    sid    = "ReadCloudContentEc2Role"
+    effect = "Allow"
+
+    actions = [
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListRoleTags",
+      "iam:ListInstanceProfilesForRole"
+    ]
+
+    resources = [
+      local.ec2_role_arn
+    ]
+  }
+
+  statement {
+    sid    = "ManageCloudContentEc2Role"
+    effect = "Allow"
+
+    actions = [
+      "iam:CreateRole",
+      "iam:DeleteRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:TagRole",
+      "iam:UntagRole"
+    ]
+
+    resources = [
+      local.ec2_role_arn
+    ]
+  }
+
+
+  # ---------------------------------------------------------------------------
+  # IAM - CloudContent EC2 instance profile
+  # ---------------------------------------------------------------------------
+
+  statement {
+    sid    = "ManageCloudContentEc2InstanceProfile"
+    effect = "Allow"
+
+    actions = [
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:GetInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile"
+    ]
+
+    resources = [
+      local.ec2_instance_profile_arn
+    ]
+  }
+
+
+  # ---------------------------------------------------------------------------
+  # IAM - attach SSM managed policy only to CloudContent EC2 role
+  # ---------------------------------------------------------------------------
+
+  statement {
+    sid    = "AttachSsmPolicyToCloudContentEc2Role"
+    effect = "Allow"
+
+    actions = [
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy"
+    ]
+
+    resources = [
+      local.ec2_role_arn
+    ]
+
+    condition {
+      test     = "ArnEquals"
+      variable = "iam:PolicyARN"
+
+      values = [
+        local.ssm_managed_instance_core_arn
+      ]
+    }
+  }
+
+
+  # ---------------------------------------------------------------------------
+  # IAM - allow EC2 service to receive CloudContent EC2 role
+  # ---------------------------------------------------------------------------
+
+  statement {
+    sid    = "PassCloudContentEc2Role"
+    effect = "Allow"
+
+    actions = [
+      "iam:PassRole"
+    ]
+
+    resources = [
+      local.ec2_role_arn
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+
+      values = [
+        "ec2.amazonaws.com"
+      ]
     }
   }
 
@@ -371,6 +520,7 @@ resource "aws_iam_policy" "terraform_foundation" {
     Project = "CloudContent"
   }
 }
+
 
 resource "aws_iam_role_policy_attachment" "terraform_foundation" {
   role       = aws_iam_role.github_actions.name
