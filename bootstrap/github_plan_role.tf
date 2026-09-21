@@ -11,7 +11,7 @@ data "aws_iam_policy_document" "github_plan_trust" {
       type = "Federated"
 
       identifiers = [
-        data.aws_iam_openid_connect_provider.github_actions.arn
+        aws_iam_openid_connect_provider.github_actions.arn
       ]
     }
 

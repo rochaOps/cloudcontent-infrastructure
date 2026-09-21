@@ -37,7 +37,7 @@ variable "github_environment" {
 variable "terraform_state_bucket" {
   description = "S3 bucket containing Terraform remote states"
   type        = string
-  default     = "tf-state-915227020774"
+  default     = "tf-state-881942917814"
 }
 
 variable "terraform_foundation_state_key" {

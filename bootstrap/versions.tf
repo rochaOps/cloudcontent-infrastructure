@@ -9,14 +9,16 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "tf-state-915227020774"
+    bucket       = "tf-state-881942917814"
     key          = "cloudcontent/bootstrap/terraform.tfstate"
     region       = "ap-northeast-1"
+    profile      = "cloudcontent-sandbox"
     use_lockfile = true
     encrypt      = true
   }
 }
 
 provider "aws" {
-  region = var.aws_region
+  region  = var.aws_region
+  profile = "cloudcontent-sandbox"
 }

@@ -5,7 +5,7 @@ output "github_actions_role_arn" {
 
 output "github_oidc_provider_arn" {
   description = "Existing GitHub Actions OIDC provider ARN"
-  value       = data.aws_iam_openid_connect_provider.github_actions.arn
+  value       = aws_iam_openid_connect_provider.github_actions.arn
 }
 
 output "terraform_backend_policy_arn" {

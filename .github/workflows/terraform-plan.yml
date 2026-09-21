@@ -51,10 +51,10 @@ jobs:
       - name: Configure AWS credentials for plan
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::915227020774:role/cloudcontent-github-plan
+          role-to-assume: arn:aws:iam::881942917814:role/cloudcontent-github-plan
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: cloudcontent-plan-${{ github.run_id }}
-          allowed-account-ids: "915227020774"
+          allowed-account-ids: "881942917814"
 
       - name: Terraform init
         run: terraform init -input=false
