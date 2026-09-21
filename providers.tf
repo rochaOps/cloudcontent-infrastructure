@@ -9,6 +9,7 @@ terraform {
   }
 
   backend "s3" {
+    bucket       = ""
     key          = "cloudcontent/foundation/terraform.tfstate"
     region       = "ap-northeast-1"
     use_lockfile = true
