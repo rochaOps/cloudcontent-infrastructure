@@ -9,10 +9,9 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "tf-state-881942917814"
+    bucket       = ""
     key          = "cloudcontent/bootstrap/terraform.tfstate"
     region       = "ap-northeast-1"
-    profile      = "cloudcontent-sandbox"
     use_lockfile = true
     encrypt      = true
   }
