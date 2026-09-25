@@ -58,6 +58,13 @@ resource "aws_instance" "app" {
 
   associate_public_ip_address = false
 
+  user_data = <<-EOF
+    #!/bin/bash
+    set -euxo pipefail
+
+    dnf install -y ansible
+  EOF
+
   metadata_options {
     http_endpoint = "enabled"
     http_tokens   = "required"
