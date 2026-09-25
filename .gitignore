@@ -19,3 +19,4 @@ override.tf.json
 
 # Local backend configuration
 *.tfbackend
+labs/ansible-ec2-ssm/ansible/*.zip
