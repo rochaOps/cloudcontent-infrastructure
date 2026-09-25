@@ -1,119 +1,51 @@
-# CloudContent
+# CloudContent Infrastructure
+
+Infraestrutura AWS como código para uma plataforma de conteúdo e labs de aprendizado, usando Terraform na região `ap-northeast-1`.
 
 ## Estrutura
 
-```text
-CloudContent/
-├── bootstrap/
-│   ├── state/          # Criação do bucket de remote state; state local
-│   └── github-oidc/    # OIDC e IAM para GitHub Actions; state S3
-├── foundation/         # Infraestrutura principal da plataforma; state S3
-└── labs/
-    └── compute-ec2-ssm/ # Experimento descartável; state S3 independente
-```
+| Root module | Responsabilidade |
+| --- | --- |
+| `bootstrap/state` | Bucket para remote state, com versionamento, criptografia e bloqueio de acesso público |
+| `bootstrap/github-oidc` | Federação OIDC e permissões IAM para GitHub Actions |
+| `foundation` | Rede, computação, armazenamento e banco de dados da plataforma |
+| `labs/compute-ec2-ssm` | EC2 privada administrada via Systems Manager |
+| `labs/ansible-ec2-ssm/terraform` | Infraestrutura do experimento Ansible via SSM State Manager |
 
-Cada diretório acima é um root module Terraform independente, com seu próprio
-`.terraform.lock.hcl`. Não execute Terraform na raiz do repositório nem em
-`bootstrap/`. Não há lab Ansible neste checkout.
+Cada root possui seu próprio lockfile de providers. Os labs têm states independentes. Execute os comandos Terraform no root correspondente.
 
-## Backends preservados
+## Segurança e automação
 
-| Root module | Backend | Bucket | Key | Região | use_lockfile |
-| --- | --- | --- | --- | --- | --- |
-| `bootstrap/state` | Local | — | `terraform.tfstate` local | provider: `ap-northeast-1` | — |
-| `bootstrap/github-oidc` | S3 | `tf-state-881942917814` | `cloudcontent/bootstrap/terraform.tfstate` | `ap-northeast-1` | `true` |
-| `foundation` | S3 | `tf-state-881942917814` | `cloudcontent/foundation/terraform.tfstate` | `ap-northeast-1` | `true` |
-| `labs/compute-ec2-ssm` | S3 | `tf-state-881942917814` | `cloudcontent/labs/compute-ec2-ssm/terraform.tfstate` | `ap-northeast-1` | `true` |
+- Remote state em S3 com native lockfile.
+- Autenticação do GitHub Actions via OIDC + STS, com roles distintas para plan e apply.
+- Configuração de conta e bucket da CI por GitHub Variables: `AWS_ACCOUNT_ID`, `TF_STATE_BUCKET` e `TF_STATE_KEY`.
+- Instâncias dos labs sem IP público, SSH, bastion ou NAT, com acesso administrativo por SSM e VPC endpoints.
+- Senha administrativa do RDS gerenciada pelo serviço; autenticação IAM habilitada.
+- States, caches, planos, variáveis locais e arquivos de backend excluídos do Git.
 
-Em foundation e GitHub OIDC, o bucket continua vazio no bloco HCL e é fornecido
-por `backend.local.tfbackend` (ignorado) ou pela variável `TF_STATE_BUCKET` dos
-workflows. A tabela reflete os arquivos locais e metadados de inicialização
-inspecionados; não houve consulta ao state remoto. Não derive uma nova key do
-nome do diretório: a key histórica de OIDC continua contendo `bootstrap`.
+## Configuração local
 
-`bootstrap/state/terraform.tfstate` e seu backup são o state local dos recursos
-que preparam o bucket. Preserve-os fora do Git e mantenha backup seguro. Os
-arquivos `.terraform/terraform.tfstate` dos módulos S3 são metadados locais do
-backend, não cópias do state remoto dos recursos.
+Use a cadeia padrão de credenciais AWS. Quando necessário, selecione seu profile pelo ambiente com `AWS_PROFILE`; nomes pessoais de profiles não fazem parte do código.
 
-## Validação local
+Os backends S3 versionados definem somente região e native lockfile. Forneça bucket, key e profile por `backend.local.tfbackend`, ignorado pelo Git, mantendo os valores do ambiente existente. A opção `encrypt = true` também fica nesse arquivo e é fornecida explicitamente pela CI.
 
-A configuração do ambiente usa o container `terraform-lab`, com o workspace em
-`/repo` e providers em `/repo/.terraform-cache`. Execute dentro desse ambiente:
+As keys ficam fora do código público. O bootstrap recebe `terraform_foundation_state_key` por `local.auto.tfvars`, ignorado pelo Git, com o mesmo valor usado no backend da foundation. Configure `TF_STATE_KEY` como GitHub Variable do repositório para os workflows de plan e apply; se houver override no environment `production`, mantenha o mesmo valor. Alterar o local da configuração não muda o destino do state.
+
+Os nomes dos recursos existentes fazem parte da configuração funcional. Personalizações precisam ser revisadas quanto a possíveis substituições de recursos.
+
+## Validação
+
+Na raiz do repositório:
 
 ```sh
-cd /repo/terraform-labs/CloudContent
 terraform fmt -recursive
-for root in bootstrap/state bootstrap/github-oidc foundation labs/compute-ec2-ssm; do
-  terraform -chdir="$root" validate
-done
 ```
 
-Os caches de inicialização existentes acompanharam os módulos, inclusive o cache
-da foundation que ainda estava na raiz. Não foi executado `terraform init`.
-Se no seu ambiente for necessário reinicializar, confirme primeiro o bucket e a
-key da tabela e use os arquivos locais preservados:
+Para roots já inicializados, execute, por exemplo:
 
 ```sh
-terraform -chdir=foundation init -backend-config=backend.local.tfbackend
-terraform -chdir=bootstrap/github-oidc init -backend-config=backend.local.tfbackend
-terraform -chdir=bootstrap/state init
-terraform -chdir=labs/compute-ec2-ssm init
+terraform -chdir=foundation validate
+terraform -chdir=labs/compute-ec2-ssm validate
 ```
 
-Esses comandos são condicionais, não uma migração de state. Não use
-`-migrate-state` por causa da reorganização. Em um clone novo, recupere o state
-local de `bootstrap/state` antes de qualquer operação sobre infraestrutura e
-recrie os arquivos locais de backend com os mesmos valores. Nunca aplique esse
-módulo como se não existisse state anterior.
-
-## Reorganização deste checkout
-
-Antes:
-
-```text
-CloudContent/
-├── .terraform/                    # Cache da foundation
-├── bootstrap/                     # GitHub OIDC/IAM
-├── state-bootstrap/               # Bucket e state local
-├── environments/sandbox/foundation/
-└── labs/compute-ec2-ssm/
-```
-
-Movimentos:
-
-- `bootstrap/*` → `bootstrap/github-oidc/`, incluindo lockfile, variáveis locais,
-  configuração local de backend e cache ignorado.
-- `state-bootstrap/` → `bootstrap/state/`, incluindo lockfile, state local,
-  backup e cache ignorado.
-- `environments/sandbox/foundation/` → `foundation/`, incluindo lockfile e
-  configuração local de backend.
-- `.terraform/` da raiz → `foundation/.terraform/`, apenas como cache local.
-- O lab compute permaneceu no mesmo caminho.
-
-Os dois workflows agora executam seus comandos em `foundation/`; o filtro de
-push do workflow de apply acompanha `foundation/**`. Roles, região, bucket
-configurável e comandos de infraestrutura desses workflows foram preservados.
-A ausência de `.gitignore` no workspace foi corrigida restaurando as regras
-preexistentes no Git para caches, states, tfvars, planos e configurações locais.
-Não havia scripts, Makefiles ou outras referências de filesystem a ajustar no
-CloudContent. As keys S3 encontradas nas policies são identidades de state e
-foram mantidas.
-
-O checkout já apresentava alterações antes deste trabalho: arquivos da foundation
-retirados da raiz e diretórios ainda não rastreados. Esse conteúdo foi preservado;
-a reorganização não cria commit nem adiciona artifacts ao índice do Git.
-
-Verificação: 752 arquivos preexistentes (excluindo os dois workflows alterados)
-foram comparados por SHA-256 nos caminhos correspondentes, sem mudança de bytes.
-Isso inclui todos os `.tf`, lockfiles, states locais, backups, configurações de
-backend e arquivos regulares dos caches. Os links absolutos dos providers foram
-preservados e dependem do mount `/repo` do container.
-
-Limitação da sessão: Terraform, actionlint e shellcheck não estavam disponíveis
-no host; Docker estava inacessível e sudo exigia senha. Portanto `fmt`,
-`validate` e validação YAML por ferramenta não puderam ser concluídos aqui.
-Execute a validação acima no container antes de usar os workflows.
-
-Nenhum apply, destroy, import, state mv, plan, init ou acesso à AWS foi executado.
-Nenhuma infraestrutura AWS e nenhum Terraform state remoto foram alterados.
+A inicialização de backend é uma etapa manual e depende da configuração privada do ambiente. Antes de qualquer operação sobre infraestrutura existente, confira a conta selecionada e o destino do state. Não use migração de state como parte de uma alteração de documentação ou sanitização.

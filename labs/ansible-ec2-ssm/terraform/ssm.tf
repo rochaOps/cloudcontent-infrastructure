@@ -1,5 +1,6 @@
 resource "aws_ssm_association" "ansible" {
-  name  = "AWS-ApplyAnsiblePlaybooks"
+  name = "AWS-ApplyAnsiblePlaybooks"
+  # Manter desabilitada enquanto o artifact ZIP ainda não existe no S3.
   count = 0
 
   association_name = "${local.name_prefix}-ansible"

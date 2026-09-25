@@ -1,11 +1,11 @@
 resource "aws_s3_bucket" "ansible_artifacts" {
-  bucket = "cloudcontent-ansible-artifacts-${data.aws_caller_identity.current.account_id}"
+  bucket = "${local.name_prefix}-artifacts-${data.aws_caller_identity.current.account_id}"
 
   # Lab descartável.
   force_destroy = true
 
   tags = merge(local.common_tags, {
-    Name    = "cloudcontent-ansible-artifacts"
+    Name    = "${local.name_prefix}-artifacts"
     Purpose = "AnsibleArtifacts"
   })
 }

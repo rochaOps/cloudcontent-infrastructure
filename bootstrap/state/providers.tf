@@ -1,4 +1,3 @@
 provider "aws" {
-  region  = "ap-northeast-1"
-  profile = "cloudcontent-sandbox"
+  region = "ap-northeast-1"
 }

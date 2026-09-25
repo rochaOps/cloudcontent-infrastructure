@@ -1,4 +1,4 @@
-# File: labs/compute-ec2-ssm/versions.tf
+# File: labs/ansible-ec2-ssm/terraform/versions.tf
 
 terraform {
   required_version = "~> 1.15.0"
