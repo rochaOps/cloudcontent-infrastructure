@@ -1,0 +1,24 @@
+---
+- name: Validate Ansible execution through AWS Systems Manager
+  hosts: localhost
+  connection: local
+  become: true
+
+  tasks:
+    - name: Create CloudContent validation directory
+      ansible.builtin.file:
+        path: /opt/cloudcontent
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create Ansible validation file
+      ansible.builtin.copy:
+        dest: /opt/cloudcontent/managed-by-ansible.txt
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          CloudContent
+          Managed by Ansible through AWS Systems Manager State Manager.
