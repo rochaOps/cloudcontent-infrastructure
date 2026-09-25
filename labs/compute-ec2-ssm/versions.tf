@@ -1,3 +1,5 @@
+# File: labs/compute-ec2-ssm/versions.tf
+
 terraform {
   required_version = "~> 1.15.0"
 
@@ -9,15 +11,11 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = ""
-    key          = "cloudcontent/bootstrap/terraform.tfstate"
     region       = "ap-northeast-1"
     use_lockfile = true
-    encrypt      = true
   }
 }
 
 provider "aws" {
-  region  = var.aws_region
-  profile = "cloudcontent-sandbox"
+  region = var.aws_region
 }

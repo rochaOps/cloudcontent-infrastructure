@@ -42,5 +42,4 @@ variable "terraform_state_bucket" {
 variable "terraform_foundation_state_key" {
   description = "Remote state key for the CloudContent foundation"
   type        = string
-  default     = "cloudcontent/foundation/terraform.tfstate"
 }
