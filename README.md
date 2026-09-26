@@ -9,6 +9,7 @@ Infraestrutura AWS como código para uma plataforma de conteúdo e labs de apren
 | `bootstrap/state` | Bucket para remote state, com versionamento, criptografia e bloqueio de acesso público |
 | `bootstrap/github-oidc` | Federação OIDC e permissões IAM para GitHub Actions |
 | `foundation` | Rede, computação, armazenamento e banco de dados da plataforma |
+| [`labs/compute-ec2-ecr`](labs/compute-ec2-ecr/README.md) | Lab completo: EC2 privada, ECR, Docker e Ansible via SSM; runbook de deploy e validação |
 | `labs/compute-ec2-ssm` | EC2 privada administrada via Systems Manager |
 | `labs/ansible-ec2-ssm/terraform` | Infraestrutura do experimento Ansible via SSM State Manager |
 

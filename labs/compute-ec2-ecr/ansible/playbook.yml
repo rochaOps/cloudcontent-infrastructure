@@ -1,0 +1,165 @@
+---
+- name: Configure CloudContent container host
+  hosts: localhost
+  connection: local
+  become: true
+
+  vars:
+    container_name: cloudcontent-app
+    container_port: "8080"
+    image: "{{ ecr_repository }}@sha256:{{ image_sha256 }}"
+
+  pre_tasks:
+    - name: Validate deployment parameters
+      ansible.builtin.assert:
+        that:
+          - aws_region is defined
+          - ecr_repository is defined
+          - image_sha256 is defined
+          - image_sha256 is match('^[a-f0-9]{64}$')
+        fail_msg: Terraform must pass the region, repository and immutable image digest.
+
+    - name: Check bootstrap completion
+      ansible.builtin.stat:
+        path: /opt/cloudcontent/bootstrap-ready
+      register: bootstrap
+
+    - name: Require completed bootstrap
+      ansible.builtin.assert:
+        that: bootstrap.stat.exists
+        fail_msg: Check cloud-init-output.log and complete bootstrap before enabling the association.
+
+  tasks:
+    - name: Install Docker from the Amazon Linux repository
+      ansible.builtin.dnf:
+        name: docker
+        state: present
+      register: docker_install
+      retries: 5
+      delay: 10
+      until: docker_install is succeeded
+
+    - name: Enable and start Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create temporary Docker authentication directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: cloudcontent-ecr-
+      register: docker_auth
+      changed_when: false
+
+    - name: Authenticate and pull the desired image
+      block:
+        - name: Login to Amazon ECR with the instance role
+          ansible.builtin.shell: |
+            set -o pipefail
+            aws ecr get-login-password --region {{ aws_region | quote }} |
+              docker --config {{ docker_auth.path | quote }} login \
+                --username AWS --password-stdin {{ ecr_repository.split('/')[0] | quote }}
+          args:
+            executable: /bin/bash
+          changed_when: false
+          no_log: true
+
+        - name: Pull CloudContent image by digest
+          ansible.builtin.command:
+            argv:
+              - docker
+              - --config
+              - "{{ docker_auth.path }}"
+              - pull
+              - "{{ image }}"
+          register: docker_pull
+          changed_when: "'Downloaded newer image' in docker_pull.stdout"
+          retries: 3
+          delay: 10
+          until: docker_pull is succeeded
+      always:
+        - name: Remove temporary registry credentials
+          ansible.builtin.file:
+            path: "{{ docker_auth.path }}"
+            state: absent
+          changed_when: false
+
+    - name: Inspect desired image
+      ansible.builtin.command:
+        argv: [docker, image, inspect, "{{ image }}"]
+      register: image_inspect
+      changed_when: false
+
+    - name: Inspect existing CloudContent container
+      ansible.builtin.command:
+        argv: [docker, container, inspect, "{{ container_name }}"]
+      register: container_inspect
+      changed_when: false
+      failed_when: >-
+        container_inspect.rc != 0 and
+        'No such container' not in container_inspect.stderr and
+        'No such object' not in container_inspect.stderr
+
+    - name: Read current container configuration
+      ansible.builtin.set_fact:
+        current_container: "{{ (container_inspect.stdout | from_json | first) if container_inspect.rc == 0 else {} }}"
+        desired_image: "{{ image_inspect.stdout | from_json | first }}"
+        desired_ports:
+          "80/tcp":
+            - HostIp: "127.0.0.1"
+              HostPort: "{{ container_port }}"
+
+    - name: Determine whether the container needs replacement
+      ansible.builtin.set_fact:
+        replace_container: >-
+          {{ container_inspect.rc != 0 or
+             current_container.Image != desired_image.Id or
+             current_container.Config.Image != image or
+             current_container.HostConfig.RestartPolicy.Name != 'unless-stopped' or
+             current_container.HostConfig.PortBindings != desired_ports }}
+
+    - name: Remove container only when the desired configuration changes
+      ansible.builtin.command:
+        argv: [docker, rm, --force, "{{ container_name }}"]
+      when:
+        - container_inspect.rc == 0
+        - replace_container | bool
+      changed_when: true
+
+    - name: Create CloudContent container
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --detach
+          - --name
+          - "{{ container_name }}"
+          - --restart
+          - unless-stopped
+          - --publish
+          - "127.0.0.1:{{ container_port }}:80"
+          - "{{ image }}"
+      when: replace_container | bool
+      changed_when: true
+
+    - name: Start an existing stopped container
+      ansible.builtin.command:
+        argv: [docker, start, "{{ container_name }}"]
+      when:
+        - not (replace_container | bool)
+        - not (current_container.State.Running | default(false))
+      changed_when: true
+
+    - name: Validate application HTTP response
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ container_port }}"
+        status_code: 200
+        return_content: true
+      register: app_response
+      until: >-
+        app_response.status == 200 and
+        'CloudContent Platform' in (app_response.content | default(''))
+      retries: 15
+      delay: 2
+      changed_when: false
