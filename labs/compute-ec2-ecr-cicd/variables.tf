@@ -38,11 +38,11 @@ variable "oidc_provider_arn" {
   type        = string
 }
 variable "publish_subject" {
-  description = "Exact GitHub OIDC sub for main, including immutable IDs if enabled"
+  description = "Exact GitHub OIDC sub for the protected cloudcontent-lab environment, including immutable IDs if enabled"
   type        = string
   validation {
-    condition     = startswith(var.publish_subject, "repo:") && endswith(var.publish_subject, ":ref:refs/heads/main") && !strcontains(var.publish_subject, "*")
-    error_message = "Use the exact repository subject restricted to refs/heads/main."
+    condition     = startswith(var.publish_subject, "repo:") && endswith(var.publish_subject, ":environment:cloudcontent-lab") && !strcontains(var.publish_subject, "*")
+    error_message = "Use the exact repository subject for environment cloudcontent-lab."
   }
 }
 variable "deploy_subject" {
