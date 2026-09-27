@@ -1,6 +1,6 @@
 # Lab: GitHub Actions → OIDC → ECR → EC2 privada
 
-**Material para leitura e execução manual. O workflow está desativado:** `workflow.yml.example` fica fora de `.github/workflows`. Publicar estes arquivos não executa o novo pipeline. Nenhum comando deste runbook foi executado contra a AWS na preparação do lab.
+**Lab validado ponta a ponta na AWS**, com execução manual do pipeline completo (`ci` → `publish` → `deploy`) e `deploy=true`. O workflow ativo está em `.github/workflows/container-lab.yml`; `workflow.yml.example` é apenas o modelo de referência. A seção 4 registra a validação e os problemas encontrados durante a execução.
 
 ## 1. Desenho antes da implementação
 
@@ -50,7 +50,7 @@ Não existe dependência via remote state: o único recurso compartilhado é o p
 
 Authentication comprova quem é o runner: `id-token: write` permite solicitar um JWT ao GitHub; a action o apresenta ao STS com `AssumeRoleWithWebIdentity`. A trust policy verifica provider, audience `sts.amazonaws.com` e subject exato. O STS devolve credenciais temporárias. Authorization é definida pela permissions policy: quais APIs e recursos essa identidade pode usar. `id-token: write` sozinho não concede acesso AWS.
 
-Subjects variam conforme a configuração OIDC do repositório, inclusive formatos com IDs imutáveis. Use o subject real e exato, sem wildcard. Para formato tradicional, os exemplos são `repo:OWNER/REPO:ref:refs/heads/main` e `repo:OWNER/REPO:environment:cloudcontent-lab`. O environment muda o subject: por isso a restrição de branch **também deve existir nas deployment branch rules do environment**.
+Subjects variam conforme a configuração OIDC do repositório, inclusive formatos com IDs imutáveis. Use o subject real e exato, sem wildcard. Os jobs `publish` e `deploy` usam o Environment `cloudcontent-lab`; ambos devem ter subjects desse contexto. No formato tradicional: `repo:OWNER/REPO:environment:cloudcontent-lab`; com IDs imutáveis: `repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:cloudcontent-lab`. O environment muda o subject: por isso a restrição de branch **também deve existir nas deployment branch rules do environment**.
 
 Configure `cloudcontent-lab` com apenas `main`, required reviewers e bloqueio de autoaprovação quando disponível no seu plano. Se required reviewers não estiver disponível, o disparo manual ainda é um controle operacional, mas não representa aprovação independente. Proteja a main e revise alterações em workflows, scripts e Dockerfile.
 
@@ -72,7 +72,7 @@ O container é substituído em uma única EC2: existe interrupção curta e não
 - `iam*.tf`, `cicd.tf`: instance role, OIDC, publicação, entrega e parâmetro.
 - `ssm.tf`, `ansible/playbook.yml`, `templates/bootstrap.sh`: bootstrap e reconciliação.
 - `app/`: aplicação e Dockerfile próprios deste lab.
-- `workflow.yml.example`, `scripts/deploy.py`, `tests/test_deploy.py`: pipeline desativado, entrega e testes offline.
+- `workflow.yml.example`, `scripts/deploy.py`, `tests/test_deploy.py`: modelo do pipeline, entrega e testes offline.
 
 ## 2. Preparar manualmente a infraestrutura
 
@@ -84,7 +84,7 @@ Todos os comandos Terraform desta seção são executados **neste diretório nov
 
 ```hcl
 oidc_provider_arn = "ARN_DO_PROVIDER_EXISTENTE"
-publish_subject   = "repo:OWNER/REPO:ref:refs/heads/main"
+publish_subject   = "repo:OWNER/REPO:environment:cloudcontent-lab"
 deploy_subject    = "repo:OWNER/REPO:environment:cloudcontent-lab"
 enable_workload   = false
 ```
@@ -130,11 +130,7 @@ Configure GitHub Variables (sem access keys):
 | `LAB_PARAMETER_NAME` | Output `parameter_name` |
 | `LAB_ASSOCIATION_ID` | Output `association_id` deste lab, após habilitar workload |
 
-Configure o environment protegido conforme a seção IAM. Em seguida, copie:
-
-```sh
-cp labs/compute-ec2-ecr-cicd/workflow.yml.example .github/workflows/container-lab.yml
-```
+Configure o environment protegido conforme a seção IAM. Neste repositório, o workflow já está em `.github/workflows/container-lab.yml`. Para reproduzir o lab em outro repositório, use o modelo como ponto de partida e confira as correções do workflow ativo, incluindo `environment: cloudcontent-lab` nos jobs `publish` e `deploy`. Não sobrescreva o workflow ativo com uma cópia antiga do modelo.
 
 Revise e faça merge na main. Este workflow só publica por `workflow_dispatch` na main; não publica automaticamente por push. PRs executam fmt/validate sem backend, syntax-check Ansible, build e teste HTTP. Os workflows antigos de foundation permanecem independentes; o workflow de plan existente pode executar em PR interno e possui OIDC próprio.
 
@@ -146,7 +142,66 @@ Após concluir o passo 5 da seção 2: nova execução com `deploy=true`. Após 
 
 Tags são nomes que podem apontar para outra imagem; digest identifica o conteúdo do manifesto. O valor efetivamente entregue é `repository@sha256:...`, não `latest` ou a tag da execução.
 
-## 4. Validação e rollback
+## 4. Validação ponta a ponta
+
+Execução manual do pipeline completo (`ci` → `publish` → `deploy`), com `deploy=true`, contra a AWS real. Os três jobs terminaram com sucesso na validação realizada pelo operador.
+
+### Evidência de identidade imutável
+
+O objetivo não foi só ver o container `Up`, e sim provar que o digest publicado pelo job `publish` é o mesmo que a EC2 privada efetivamente executa:
+
+```text
+GitHub Actions (build + testes)
+ → tested-image artifact
+ → GitHub OIDC → AWS STS → publish role
+ → ECR (sha256:3fffd9e3...)
+ → SSM Parameter Store
+ → State Manager Association
+ → AWS-ApplyAnsiblePlaybooks
+ → Ansible → EC2 privada → Docker
+ → RepoDigest sha256:3fffd9e3... ✅
+```
+
+A inspeção Docker na instância confirmou `RepoDigest` idêntico ao digest gerado pelo `publish`. Essa comparação comprova a identidade imutável do artefato do CI até o runtime. O digest abreviado identifica a evidência desta validação; cada novo release deve comparar seu próprio digest completo.
+
+### Troubleshooting real
+
+Três problemas apareceram durante a validação do deployment:
+
+**1. `deploy` pulado (`skipped`) na primeira run manual.**
+
+Hipótese: o disparo não solicitou deployment. Teste: conferir o input da execução. Resultado: o comando `gh workflow run` não passou `-f deploy=true`, então `inputs.deploy` recebeu `false`, o default do `workflow_dispatch`, e a condição `inputs.deploy && github.ref == 'refs/heads/main'` não foi satisfeita. O pipeline publicou sem fazer deployment, conforme configurado. Correção: disparar na `main` com `deploy=true`; só investigar a etapa seguinte depois de confirmar esse input.
+
+**2. `deploy` falhando com `exit status 254`, sem mensagem legível.**
+
+Hipótese: o script escondia o erro original da AWS CLI. Teste: inspecionar o tratamento de erro de `aws()` em `scripts/deploy.py`. Resultado: `subprocess.run(..., check=True, capture_output=True)` capturava `stderr`, mas o script não o imprimia; o traceback mostrava apenas o código de saída. Correção: conferir `returncode`, imprimir `stderr` e só então propagar a exceção com `check_returncode()`. A execução seguinte revelou a falha de autorização descrita abaixo.
+
+**3. Causa raiz revelada: `AccessDeniedException` em `ssm:StartAssociationsOnce`.**
+
+Hipótese: o ID usado pelo GitHub estava fora do ARN autorizado pela policy. Teste: comparar `LAB_ASSOCIATION_ID` com `terraform output -raw association_id` e com o recurso permitido pela role `cloudcontent-lab-deploy`. Resultado: a association havia sido recriada e a GitHub Variable ainda apontava para o ID antigo; a policy já autorizava o ARN da association atual (`arn:aws:ssm:...:association/<id>`).
+
+O `terraform plan` não acusava drift porque o recurso e a policy estavam coerentes com o código. O desalinhamento estava fora do state, entre a variável do GitHub e o ID atual do recurso. Correção: usar `terraform output -raw association_id` como fonte de verdade, atualizar a Repository Variable via `gh api --method PATCH` e disparar novamente. A nova execução passou.
+
+**Lição:** qualquer valor que atravesse a fronteira Terraform → GitHub Variables (IDs, ARNs) pode ficar desatualizado se o recurso for recriado. Hoje essa sincronização é manual; após uma recriação, confira os outputs antes de executar o pipeline.
+
+### `terraform destroy` bloqueado por ECR não vazio
+
+Na tentativa de limpeza, `aws_ecr_repository` ainda não tinha `force_delete`, e a remoção falhou com `RepositoryNotEmptyException`. Outros recursos já haviam sido destruídos quando o erro ocorreu: um destroy pode terminar parcialmente e não desfaz exclusões já concluídas.
+
+Correção no código, seguindo a convenção de descarte já usada nos buckets S3 deste lab (`force_destroy = true`):
+
+```hcl
+resource "aws_ecr_repository" "app" {
+  name         = "${local.name_prefix}-app"
+  force_delete = true
+
+  # Demais configurações do repositório permanecem iguais.
+}
+```
+
+`force_delete = true` permite excluir o repositório mesmo com imagens. É uma escolha deliberada para este lab descartável, não um padrão a transportar para produção. A opção precisa estar aplicada ao recurso antes de depender dela na limpeza; revise o plan e o descarte das imagens.
+
+## 5. Validação e rollback
 
 Critérios para considerar concluído:
 
@@ -169,9 +224,9 @@ export IMAGE_DIGEST='sha256:DIGEST_ANTERIOR'
 python3 labs/compute-ec2-ecr-cicd/scripts/deploy.py
 ```
 
-Não recrie a imagem com uma tag antiga esperando o mesmo digest. Repita a validação por SSM após o rollback. Para desativar o lab, desative/remova seu workflow e faça `terraform plan -destroy` neste root. Leia o plano antes de `terraform destroy`. ECR não vazio bloqueia remoção: confirme o descarte das imagens e esvazie somente o repositório deste lab. O bucket Ansible tem `force_destroy = true`, portanto seus artefatos e versões serão removidos no destroy. O provider OIDC compartilhado não é gerenciado por este root. O lab anterior permanece independente.
+Não recrie a imagem com uma tag antiga esperando o mesmo digest. Repita a validação por SSM após o rollback. Para desativar o lab, desative/remova seu workflow e faça `terraform plan -destroy` neste root. Leia o plano antes de `terraform destroy`. O ECR está configurado com `force_delete = true`: com essa configuração aplicada, a remoção também descarta suas imagens. Confirme esse descarte antes de destruir o lab. O bucket Ansible tem `force_destroy = true`, portanto seus artefatos e versões serão removidos no destroy. O provider OIDC compartilhado não é gerenciado por este root. O lab anterior permanece independente.
 
-## 5. Troubleshooting: uma hipótese por vez
+## 6. Troubleshooting: uma hipótese por vez
 
 | Hipótese | Um teste | Resultado → próxima hipótese |
 | --- | --- | --- |
