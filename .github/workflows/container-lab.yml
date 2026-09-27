@@ -82,6 +82,8 @@ jobs:
         with:
           name: tested-image
           path: /tmp
+      - name: Inspect OIDC subject
+        uses: github/actions-oidc-debugger@main
       - name: Authenticate with AWS through OIDC and STS
         uses: aws-actions/configure-aws-credentials@v6
         with:
