@@ -10,8 +10,11 @@ from datetime import datetime, timezone
 def aws(*args):
     result = subprocess.run(
         ["aws", *args, "--output", "json", "--no-cli-pager"],
-        check=True, capture_output=True, text=True,
+        capture_output=True, text=True,
     )
+    if result.returncode != 0:
+        print(f"aws {' '.join(args)} failed:\n{result.stderr}", flush=True)
+        result.check_returncode()
     return json.loads(result.stdout or "{}")
 
 
