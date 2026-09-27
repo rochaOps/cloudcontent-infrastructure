@@ -1,0 +1,136 @@
+# Inactive here. Read README before copying to .github/workflows/container-lab.yml.
+name: Container lab CI and delivery
+on:
+  pull_request:
+    paths:
+      - 'labs/compute-ec2-ecr-cicd/**'
+      - '.github/workflows/container-lab.yml'
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy after publication and environment approval
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: container-lab-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'delivery' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-1
+  AWS_DEFAULT_REGION: ap-northeast-1
+  AWS_PAGER: ''
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: '1.15.8'
+      - name: Validate Terraform without backend or AWS credentials
+        run: |
+          for root in labs/compute-ec2-ecr-cicd; do
+            terraform -chdir="$root" fmt -check
+            terraform -chdir="$root" init -backend=false -input=false
+            terraform -chdir="$root" validate
+          done
+      - name: Test deployment control flow without AWS
+        run: python3 -B -m unittest discover -s labs/compute-ec2-ecr-cicd/tests
+      - name: Validate Ansible syntax
+        run: |
+          python3 -m pip install 'ansible-core==2.19.3'
+          ansible-playbook --syntax-check -i localhost, labs/compute-ec2-ecr-cicd/ansible/playbook.yml
+      - name: Build and smoke test the image
+        run: |
+          set -euo pipefail
+          docker build --pull --platform linux/amd64 -t cloudcontent-ci labs/compute-ec2-ecr-cicd/app
+          docker run -d --name cloudcontent-ci -p 127.0.0.1:18080:80 cloudcontent-ci
+          trap 'docker rm -f cloudcontent-ci' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18080 > /tmp/page.html; then break; fi
+            sleep 2
+          done
+          grep -q 'CloudContent Platform' /tmp/page.html
+          docker save cloudcontent-ci -o /tmp/cloudcontent-image.tar
+      - name: Preserve the tested image for publication
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-image
+          path: /tmp/cloudcontent-image.tar
+          retention-days: 1
+
+  publish:
+    needs: ci
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+    env:
+      ECR_REPOSITORY: ${{ vars.LAB_ECR_REPOSITORY }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-image
+          path: /tmp
+      - name: Authenticate with AWS through OIDC and STS
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.LAB_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          role-session-name: lab-publish-${{ github.run_id }}
+      - name: Publish the tested image and resolve its immutable digest
+        id: image
+        run: |
+          set -euo pipefail
+          : "${ECR_REPOSITORY:?Configure LAB_ECR_REPOSITORY}"
+          : "${AWS_ACCOUNT_ID:?Configure AWS_ACCOUNT_ID}"
+          registry="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+          tag="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          export DOCKER_CONFIG
+          DOCKER_CONFIG=$(mktemp -d)
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
+          docker load -i /tmp/cloudcontent-image.tar
+          docker tag cloudcontent-ci "$registry/$ECR_REPOSITORY:$tag"
+          docker push "$registry/$ECR_REPOSITORY:$tag"
+          digest=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids "imageTag=$tag" --query 'imageDetails[0].imageDigest' --output text)
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Published: $ECR_REPOSITORY@$digest" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: publish
+    if: inputs.deploy && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: cloudcontent-lab
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Authenticate with the restricted deployment role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.LAB_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          role-session-name: lab-deploy-${{ github.run_id }}
+      - name: Deliver digest and wait for Ansible health check
+        env:
+          IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
+          PARAMETER_NAME: ${{ vars.LAB_PARAMETER_NAME }}
+          ASSOCIATION_ID: ${{ vars.LAB_ASSOCIATION_ID }}
+          ECR_REPOSITORY: ${{ vars.LAB_ECR_REPOSITORY }}
+        run: python3 labs/compute-ec2-ecr-cicd/scripts/deploy.py

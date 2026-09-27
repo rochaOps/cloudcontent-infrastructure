@@ -16,8 +16,7 @@ override.tf.json
 
 # Terraform plan files
 *.tfplan
+tfplan
 
 # Local backend configuration
 *.tfbackend
-
-.generated/
