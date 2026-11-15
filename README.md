@@ -7,7 +7,7 @@ Infraestrutura AWS como código para uma plataforma de conteúdo e labs de apren
 | Root module | Responsabilidade |
 | --- | --- |
 | `bootstrap/state` | Bucket para remote state, com versionamento, criptografia e bloqueio de acesso público |
-| `bootstrap/github-oidc` | Federação OIDC e permissões IAM para GitHub Actions |
+| `bootstrap/github-oidc` | Federação OIDC e permissões IAM para GitHub Actions; também as roles de plan e apply do repositório `homelab-devops`, restritas à key do state do homelab |
 | `foundation` | Rede, computação, armazenamento e banco de dados da plataforma |
 | [`labs/compute-ec2-ecr`](labs/compute-ec2-ecr/README.md) | Lab completo: EC2 privada, ECR, Docker e Ansible via SSM; runbook de deploy e validação |
 | `labs/compute-ec2-ssm` | EC2 privada administrada via Systems Manager |

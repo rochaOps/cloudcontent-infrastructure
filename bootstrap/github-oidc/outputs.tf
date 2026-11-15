@@ -22,3 +22,13 @@ output "github_plan_role_arn" {
   description = "IAM role assumed by GitHub Actions for Terraform pull request plans"
   value       = aws_iam_role.github_plan.arn
 }
+
+output "homelab_github_plan_role_arn" {
+  description = "IAM role assumed by homelab-devops pull request plans"
+  value       = aws_iam_role.homelab_github_plan.arn
+}
+
+output "homelab_github_apply_role_arn" {
+  description = "IAM role assumed by homelab-devops applies"
+  value       = aws_iam_role.homelab_github_apply.arn
+}
